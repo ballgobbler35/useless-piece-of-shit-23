@@ -2804,197 +2804,155 @@ do
     -- TARGET UI (added)
     -- ============================================================
     local TargetOuter = Library:Create('Frame', {
-        AnchorPoint = Vector2.new(1, 0);
-        BorderColor3 = Color3.new(0, 0, 0);
-        Position = UDim2.new(1, -10, 0, 60);
-        Size = UDim2.new(0, 160, 0, 30);
-        Visible = false;
-        ZIndex = 200;
-        Parent = ScreenGui;
-    });
+    AnchorPoint = Vector2.new(1, 0);
+    BorderColor3 = Color3.new(0, 0, 0);
+    Position = UDim2.new(1, -10, 0, 110); -- below watermark
+    Size = UDim2.new(0, 180, 0, 70);
+    Visible = false;
+    ZIndex = 200;
+    Parent = ScreenGui;
+});
 
-    local TargetInner = Library:Create('Frame', {
-        BackgroundColor3 = Library.MainColor;
-        BorderColor3 = Library.AccentColor;
-        BorderMode = Enum.BorderMode.Inset;
-        Size = UDim2.new(1, 0, 1, 0);
-        ZIndex = 201;
-        Parent = TargetOuter;
-    });
+local TargetInner = Library:Create('Frame', {
+    BackgroundColor3 = Library.MainColor;
+    BorderColor3 = Library.AccentColor;
+    BorderMode = Enum.BorderMode.Inset;
+    Size = UDim2.new(1, 0, 1, 0);
+    ZIndex = 201;
+    Parent = TargetOuter;
+});
 
-    Library:AddToRegistry(TargetInner, {
-        BorderColor3 = 'AccentColor';
-    });
+Library:AddToRegistry(TargetInner, {
+    BorderColor3 = 'AccentColor';
+});
 
-    local TargetGradient = Library:Create('UIGradient', {
-        Color = ColorSequence.new({
+local TargetGradient = Library:Create('UIGradient', {
+    Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
+        ColorSequenceKeypoint.new(1, Library.MainColor),
+    });
+    Rotation = -90;
+    Parent = TargetInner;
+});
+
+Library:AddToRegistry(TargetGradient, {
+    Color = function()
+        return ColorSequence.new({
             ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
             ColorSequenceKeypoint.new(1, Library.MainColor),
         });
-        Rotation = -90;
-        Parent = TargetInner;
-    });
+    end
+});
 
-    Library:AddToRegistry(TargetGradient, {
-        Color = function()
-            return ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
-                ColorSequenceKeypoint.new(1, Library.MainColor),
-            });
+-- Labels for target info
+local NameLabel = Library:CreateLabel({
+    Position = UDim2.new(0, 5, 0, 5);
+    Size = UDim2.new(1, -10, 0, 18);
+    Text = 'Name: --';
+    TextXAlignment = Enum.TextXAlignment.Left;
+    TextSize = 14;
+    ZIndex = 203;
+    Parent = TargetInner;
+});
+
+local DisplayNameLabel = Library:CreateLabel({
+    Position = UDim2.new(0, 5, 0, 25);
+    Size = UDim2.new(1, -10, 0, 18);
+    Text = 'Display: --';
+    TextXAlignment = Enum.TextXAlignment.Left;
+    TextSize = 14;
+    ZIndex = 203;
+    Parent = TargetInner;
+});
+
+local HealthLabel = Library:CreateLabel({
+    Position = UDim2.new(0, 5, 0, 45);
+    Size = UDim2.new(1, -10, 0, 18);
+    Text = 'Health: --';
+    TextXAlignment = Enum.TextXAlignment.Left;
+    TextSize = 14;
+    ZIndex = 203;
+    Parent = TargetInner;
+});
+
+Library.TargetUI = TargetOuter;
+Library:MakeDraggable(TargetOuter);
+
+-- State
+Library.Target = nil;
+local TargetChangedCallbacks = {};
+local HealthUpdateConnection = nil;
+
+local function UpdateTargetDisplay(player)
+    if not player or not player.Character or not player.Character:FindFirstChild('Humanoid') then
+        NameLabel.Text = 'Name: --';
+        DisplayNameLabel.Text = 'Display: --';
+        HealthLabel.Text = 'Health: --';
+        return;
+    end
+    local humanoid = player.Character.Humanoid;
+    NameLabel.Text = 'Name: ' .. player.Name;
+    DisplayNameLabel.Text = 'Display: ' .. player.DisplayName;
+    HealthLabel.Text = 'Health: ' .. math.floor(humanoid.Health) .. '/' .. humanoid.MaxHealth;
+end
+
+local function StartHealthUpdates(player)
+    if HealthUpdateConnection then HealthUpdateConnection:Disconnect(); HealthUpdateConnection = nil; end
+    if not player then return end
+    HealthUpdateConnection = RunService.Heartbeat:Connect(function()
+        if not Library.Target or not Library.Target.Parent then
+            Library:ClearTarget();
+            return;
         end
-    });
+        UpdateTargetDisplay(Library.Target);
+    end);
+end
 
-    local TargetLabel = Library:CreateLabel({
-        Size = UDim2.new(1, 0, 1, 0);
-        TextSize = 14;
-        TextXAlignment = Enum.TextXAlignment.Center;
-        TextYAlignment = Enum.TextYAlignment.Center;
-        Text = 'Target: None';
-        ZIndex = 203;
-        Parent = TargetInner;
-    });
+function Library:SetTarget(player)
+    if type(player) == 'string' then
+        player = Players:FindFirstChild(player);
+    end
+    if not player then
+        Library:ClearTarget();
+        return;
+    end
+    Library.Target = player;
+    Library.TargetUI.Visible = true;
+    UpdateTargetDisplay(player);
+    StartHealthUpdates(player);
+    for _, cb in ipairs(TargetChangedCallbacks) do
+        pcall(cb, player);
+    end
+end
 
-    Library.TargetUI = TargetOuter;
-    Library.TargetLabel = TargetLabel;
-    Library:MakeDraggable(TargetOuter);
-
-    -- Target state
+function Library:ClearTarget()
     Library.Target = nil;
-    local TargetChangedCallbacks = {};
-
-    function Library:ShowTargetUI(show)
-        self.TargetUI.Visible = show;
+    Library.TargetUI.Visible = false;
+    if HealthUpdateConnection then HealthUpdateConnection:Disconnect(); HealthUpdateConnection = nil; end
+    NameLabel.Text = 'Name: --';
+    DisplayNameLabel.Text = 'Display: --';
+    HealthLabel.Text = 'Health: --';
+    for _, cb in ipairs(TargetChangedCallbacks) do
+        pcall(cb, nil);
     end
+end
 
-    function Library:SetTarget(name)
-        if name and not Players:FindFirstChild(name) then
-            name = nil;
-        end
-        self.Target = name;
-        self.TargetLabel.Text = name and ('Target: ' .. name) or 'Target: None';
+function Library:GetTarget()
+    return Library.Target;
+end
 
-        for _, cb in ipairs(TargetChangedCallbacks) do
-            pcall(cb, name)
-        end
+function Library:OnTargetChanged(callback)
+    if type(callback) == 'function' then
+        table.insert(TargetChangedCallbacks, callback);
     end
+end
 
-    function Library:GetTarget()
-        return self.Target;
+-- Auto-clear on player leave
+Players.PlayerRemoving:Connect(function(player)
+    if Library.Target == player then
+        Library:ClearTarget();
     end
-
-    function Library:OnTargetChanged(callback)
-        if type(callback) == 'function' then
-            table.insert(TargetChangedCallbacks, callback)
-        end
-    end
-
-    -- Auto-clear target when player leaves
-    Players.PlayerRemoving:Connect(function(player)
-        if Library.Target == player.Name then
-            Library:SetTarget(nil)
-        end
-    end)
-
-    -- Click on target label to open player dropdown (optional)
-    -- We'll implement a simple dropdown to pick target manually
-    local TargetDropdownFrame = Library:Create('Frame', {
-        BackgroundColor3 = Library.BackgroundColor;
-        BorderColor3 = Library.OutlineColor;
-        BorderMode = Enum.BorderMode.Inset;
-        Size = UDim2.new(0, 150, 0, 0);
-        Position = UDim2.new(0, 0, 0, 30);
-        Visible = false;
-        ZIndex = 210;
-        Parent = TargetOuter;
-    });
-
-    Library:AddToRegistry(TargetDropdownFrame, {
-        BackgroundColor3 = 'BackgroundColor';
-        BorderColor3 = 'OutlineColor';
-    });
-
-    local TargetScrolling = Library:Create('ScrollingFrame', {
-        BackgroundTransparency = 1;
-        BorderSizePixel = 0;
-        Size = UDim2.new(1, 0, 1, 0);
-        CanvasSize = UDim2.new(0, 0, 0, 0);
-        ZIndex = 211;
-        Parent = TargetDropdownFrame;
-        ScrollBarThickness = 2;
-    });
-
-    local TargetListLayout = Library:Create('UIListLayout', {
-        FillDirection = Enum.FillDirection.Vertical;
-        SortOrder = Enum.SortOrder.LayoutOrder;
-        Padding = UDim.new(0, 2);
-        Parent = TargetScrolling;
-    });
-
-    local function BuildTargetDropdown()
-        for _, child in ipairs(TargetScrolling:GetChildren()) do
-            if child:IsA('TextButton') then child:Destroy() end
-        end
-
-        local players = GetPlayersString()
-        local count = 0
-        for _, p in ipairs(players) do
-            local btn = Library:Create('TextButton', {
-                BackgroundColor3 = Library.MainColor;
-                BorderSizePixel = 0;
-                Size = UDim2.new(1, 0, 0, 20);
-                Text = p;
-                TextColor3 = Library.FontColor;
-                TextSize = 14;
-                Font = Library.Font;
-                ZIndex = 212;
-                Parent = TargetScrolling;
-            });
-            Library:AddToRegistry(btn, {
-                BackgroundColor3 = 'MainColor';
-                TextColor3 = 'FontColor';
-            });
-
-            Library:OnHighlight(btn, btn,
-                { BackgroundColor3 = 'AccentColor'; TextColor3 = 'FontColor' },
-                { BackgroundColor3 = 'MainColor'; TextColor3 = 'FontColor' }
-            );
-
-            btn.MouseButton1Click:Connect(function()
-                Library:SetTarget(p)
-                TargetDropdownFrame.Visible = false
-                Library.OpenedFrames[TargetDropdownFrame] = nil
-            end)
-            count = count + 1
-        end
-
-        TargetScrolling.CanvasSize = UDim2.new(0, 0, 0, count * 22 + 4)
-        TargetDropdownFrame.Size = UDim2.new(0, 150, 0, math.min(count * 22 + 4, 120))
-    end
-
-    TargetLabel.InputBegan:Connect(function(Input)
-        if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-            if TargetDropdownFrame.Visible then
-                TargetDropdownFrame.Visible = false
-                Library.OpenedFrames[TargetDropdownFrame] = nil
-            else
-                BuildTargetDropdown()
-                TargetDropdownFrame.Visible = true
-                Library.OpenedFrames[TargetDropdownFrame] = true
-            end
-        end
-    end)
-
-    InputService.InputBegan:Connect(function(Input)
-        if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-            if TargetDropdownFrame.Visible and not Library:IsMouseOverFrame(TargetDropdownFrame) and not Library:IsMouseOverFrame(TargetLabel) then
-                TargetDropdownFrame.Visible = false
-                Library.OpenedFrames[TargetDropdownFrame] = nil
-            end
-        end
-    end)
-
-    -- end of Target UI
-end;
+end)
 
 function Library:SetWatermarkVisibility(Bool)
     Library.Watermark.Visible = Bool;
@@ -3799,3 +3757,4 @@ Players.PlayerRemoving:Connect(OnPlayerChange);
 
 getgenv().Library = Library
 return Library
+end
